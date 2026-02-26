@@ -16,14 +16,14 @@ you can load the program and that you understand what is going on.
 ## Compiling example code
 
 If you completed the setup dependencies guide, then you should be able to
-simply run the =make= command, in this directory. (The [[file:Makefile][Makefile]] and
-[[file:../configure][configure]] script will try to be nice and detect if you didn't complete the
+simply run the `make` command, in this directory. (The [Makefile](Makefile) and
+[configure](../configure) script will try to be nice and detect if you didn't complete the
 setup steps).
 
-** Simple XDP code
+## Simple XDP code
 
 The very simple XDP code used in this step is located in
-[[file:xdp_pass_kern.c]], and displayed below:
+[xdp_pass_kern.c](xdp_pass_kern.c), and displayed below:
 
 ```C
 SEC("xdp")
@@ -36,25 +36,25 @@ int  xdp_prog_simple(struct xdp_md *ctx)
 ## Compiling process
 
 The LLVM+clang compiler turns this restricted-C code into BPF-byte-code and
-stores it in an ELF object file, named =xdp_pass_kern.o=.
+stores it in an ELF object file, named `xdp_pass_kern.o`.
 
 ### Looking into the BPF-ELF object
 
-You can inspect the contents of the =xdp_pass_kern.o= file with different
-tools like =readelf= or =llvm-objdump=. As the Makefile enables the debug
-option =-g= (LLVM version >= 4.0), the llvm-objdump tool can annotate
+You can inspect the contents of the `xdp_pass_kern.o` file with different
+tools like `readelf` or `llvm-objdump`. As the Makefile enables the debug
+option `-g` (LLVM version >= 4.0), the llvm-objdump tool can annotate
 assembler output with the original C code:
 
 Run: `llvm-objdump -S xdp_pass_kern.o`
 ```asm
-xdp_pass_kern.o:	file format ELF64-BPF
+xdp_pass_kern.o:        file format elf64-bpf
 
 Disassembly of section xdp:
-xdp_prog_simple:
-; {
-       0:	b7 00 00 00 02 00 00 00 	r0 = 2
-; return XDP_PASS;
-       1:	95 00 00 00 00 00 00 00 	exit
+
+0000000000000000 <xdp_prog_simple>:
+;       return XDP_PASS;
+       0:       b7 00 00 00 02 00 00 00 r0 = 2
+       1:       95 00 00 00 00 00 00 00 exit
 ```
 
 If you don't want to see the raw BPF instructions add: `--no-show-raw-insn`.
@@ -69,26 +69,16 @@ To load this into the kernel, user space needs an ELF loader to read the
 file and pass it into the kernel in the right format.
 
 The *libbpf* library provides both an ELF loader and several BPF helper
-functions. It understands BPF Type Format (BTF) and implements [[https://nakryiko.com/posts/bpf-core-reference-guide/][CO-RE]]
+functions. It understands BPF Type Format (BTF) and implements [CO-RE](https://nakryiko.com/posts/bpf-core-reference-guide/)
 relocation as part of ELF loading, which is where our libelf-devel
 dependency comes from.
 
 The *libxdp* library provides helper functions for loading and installing
 XDP programs using the XDP multi-dispatch protocol and helper functions for
 using AF_XDP sockets. The *libxdp* library uses *libbpf* and adds extra
-features on top. In this tutorial you will learn how to write C code using
-the *libxdp* and *libbpf* libraries.
+features on top. 
 
-The C code in [[file:xdp_pass_user.c]] (which gets compiled to the program
-`xdp_pass_user`) shows how to write a BPF loader specifically for our
-`xdp_pass_kern.o` ELF file. This loader attaches the program in the ELF file
-to an XDP hook on a network device.
-
-It does seem overkill to write a C program to simply load and attach a
-specific BPF-program. However, we still include this in the tutorial
-since it will help you integrate BPF into other Open Source projects.
-
-There are some alternatives to writing a new loader:
+To load the code to the XDP runtime, you have two options:
 
 * The standard iproute2 tool
 * The xdp-loader from xdp-tools
@@ -100,31 +90,22 @@ the standard `ip` tool; so in this case you can actually load our ELF-file
 `xdp_pass_kern.o` (where we named our ELF section "xdp") like this:
 
 ```sh
-$ sudo ip link set dev lo xdpgeneric obj xdp_pass_kern.o sec xdp
+$ ip link set dev lo xdpgeneric obj xdp_pass_kern.o sec xdp
 ```
 
 Listing the device via `ip link show` also shows the XDP info:
 
 ```sh
-$ sudo ip link show dev lo
+$ ip link show dev lo
 1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536 xdpgeneric qdisc noqueue state UNKNOWN mode DEFAULT group default qlen 1000
     link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00
     prog/xdp id 408 name xdp_prog_simple tag 3b185187f1855c4c jited
 ```
 
-Should you run it without `sudo`, you would have less information:
-
-```sh
-$ ip link show dev lo
-1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536 xdpgeneric qdisc noqueue state UNKNOWN mode DEFAULT group default qlen 1000
-    link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00
-    prog/xdp id 408
-```
-
 Removing the XDP program again from the device:
 
 ```sh
-$ sudo ip link set dev lo xdpgeneric off
+$ ip link set dev lo xdpgeneric off
 ```
 
 It is important to note that the `ip` tool from iproute2 does not implement
@@ -140,78 +121,36 @@ We can load our `xdp_pass_kern.o` program and attach it using the XDP
 multi-dispatch protocol like this:
 
 ```sh
-$ sudo xdp-loader load -m skb lo xdp_pass_kern.o
+$ xdp-loader load -m skb lo xdp_pass_kern.o
 ```
 
 We can show the status of the XDP programs attached to the device:
 
 ```sh
-$ sudo xdp-loader status lo
+$ xdp-loader status lo
 CURRENT XDP PROGRAM STATUS:
 
 Interface        Prio  Program name      Mode     ID   Tag               Chain actions
 --------------------------------------------------------------------------------------
-lo                     xdp_dispatcher    skb      486  94d5f00c20184d17
- =>              50     xdp_prog_simple           493  3b185187f1855c4c  XDP_PASS
+lo                     xdp_dispatcher    skb      155  90f686eb86991928 
+ =>              50     xdp_prog_simple           164  3b185187f1855c4c  XDP_PASS
 ```
 
-We can unload the program we just added (ID 493 in above example) using this command:
+We can unload the program we just added (ID 164 in above example) using this command:
 
 ```sh
-sudo xdp-loader unload -i 493 lo 
+xdp-loader unload -i 164 lo 
 ```
 
 Or unload all programs using this command:
 
 ```sh
-sudo xdp-loader unload -a lo
-```
-
-### Loading using xdp_pass_user
-
-To load the program using our own loader, issue this command:
-
-```sh
- $ sudo ./xdp_pass_user --dev lo
- Success: Loading XDP prog name:xdp_prog_simple(id:732) on device:lo(ifindex:1)
-```
-
-Loading the program again will add a second program instance to the XDP dispatcher on the
-interface.
-
-```sh
-$ sudo ./xdp_pass_user -d lo
-Success: Loading XDP prog name:xdp_prog_simple(id:745) on device:lo(ifindex:1)
-
-$ sudo xdp-loader status lo
-CURRENT XDP PROGRAM STATUS:
-
-Interface        Prio  Program name      Mode     ID   Tag               Chain actions
---------------------------------------------------------------------------------------
-lo                     xdp_dispatcher    skb      738  94d5f00c20184d17
- =>              50     xdp_prog_simple           732  3b185187f1855c4c  XDP_PASS
- =>              50     xdp_prog_simple           745  3b185187f1855c4c  XDP_PASS
+xdp-loader unload -a lo
 ```
 
 You can list XDP programs  on the device using different commands, and verify
 that the program ID is the same:
+
 * `ip link list dev lo`
 * `bpftool net list dev lo`
 * `xdp-loader status lo`
-
-### Unloading using xdp_pass_user
-
-To unload the program using our own loader, use this command, with the `id` of the program to
-unload:
-
-```sh
-$ sudo ./xdp_pass_user --dev lo -U 745
-Detaching XDP program with ID 745 from lo
-Success: Unloading XDP prog name: xdp_prog_simple
-```
-
-You can also unload all programs from the XDP hook on the device using this command:
-
-```sh
-$ sudo ./xdp_pass_user --dev lo --unload-all
-```
