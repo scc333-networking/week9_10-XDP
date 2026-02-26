@@ -1,6 +1,6 @@
 {
   "name": "scc_231/mininet",
-  "image": "scc-registry.lancs.ac.uk/teaching/scc_231/mininet:25.1.8",
+  "image": "scc-registry.lancs.ac.uk/teaching/scc_333/ken:25.1.8",
   "workspaceMount": "source=${localWorkspaceFolder}/,target=/workspace,type=bind,consistency=cached",
   "workspaceFolder": "/workspace",
   "postCreateCommand": "bash -c /scripts/entrypoint.sh",
