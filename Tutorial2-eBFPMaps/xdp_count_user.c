@@ -19,7 +19,14 @@ static const char *__doc__ = "XDP packet/byte counter using a per-CPU eBPF map";
 
 #include "../common/common_params.h"
 #include "../common/common_user_bpf_xdp.h"
-#include "../common/xdp_stats_kern_user.h"
+
+/* This is the data record stored in the map 
+ * TODO: make sure the structure has the same details as the kenrel version. */
+struct datarec {
+	__u64 rx_packets;
+	__u64 rx_bytes;
+};
+
 
 static volatile bool exiting;
 
@@ -45,18 +52,21 @@ static int get_stats_map_fd(struct xdp_program *prog)
 	struct bpf_map *map;
 	int fd;
 
+	// Get the underlying bpf_object from the xdp_program using the helper function from xdp-tools at common/common_user_bpf_xdp.c
 	obj = xdp_program__bpf_obj(prog);
 	if (!obj) {
 		fprintf(stderr, "ERR: unable to get bpf_object from xdp_program\n");
 		return -1;
 	}
 
+	// This name is the same as the one defined in the kernel code (struct definition of the map)
 	map = bpf_object__find_map_by_name(obj, "xdp_stats_map");
 	if (!map) {
 		fprintf(stderr, "ERR: map 'xdp_stats_map' not found\n");
 		return -1;
 	}
 
+	// Use the libbpf helper function to get the file descriptor for the map, which we will use to read values from the map in the main loop
 	fd = bpf_map__fd(map);
 	if (fd < 0) {
 		fprintf(stderr, "ERR: bpf_map__fd failed: %s\n", strerror(errno));
@@ -82,6 +92,7 @@ int main(int argc, char **argv)
 	__u32 key = 0;
 	int err;
 
+	// Using the helper function from xdp-tools at common/common_params.h
 	parse_cmdline_args(argc, argv, long_options, &cfg, __doc__);
 	if (cfg.ifindex == -1) {
 		fprintf(stderr, "ERR: required option --dev missing\n");
@@ -89,33 +100,42 @@ int main(int argc, char **argv)
 		return EXIT_FAIL_OPTION;
 	}
 
+	// Unload program logic
 	if (cfg.do_unload || cfg.unload_all) {
+
+		// Unload logic is implemented in common/common_user_bpf_xdp.c
 		err = do_unload(&cfg);
 		if (err)
 			fprintf(stderr, "ERR: unload failed (%d)\n", err);
 		return err ? EXIT_FAIL_XDP : EXIT_OK;
 	}
 
+	// Use the hardcoded values to load the program and get the map fd
 	strncpy(cfg.filename, filename, sizeof(cfg.filename));
 	strncpy(cfg.progname, progname, sizeof(cfg.progname));
 
+	// Simple logic to handle Ctrl-C and graceful shutdown
 	signal(SIGINT, sigint_handler);
 	signal(SIGTERM, sigint_handler);
 
+	// Load the eBPF object and attach the XDP program using the helper function from xdp-tools at common/common_user_bpf_xdp.c
 	prog = load_bpf_and_xdp_attach(&cfg);
 	if (!prog)
 		return EXIT_FAIL_BPF;
 
+	// Get the file descriptor for the eBPF map using the helper function defined above
 	map_fd = get_stats_map_fd(prog);
 	if (map_fd < 0)
 		return EXIT_FAIL_BPF;
 
+	// Get the number of possible CPUs to allocate a per-CPU value buffer
 	n_cpus = libbpf_num_possible_cpus();
 	if (n_cpus < 0) {
 		fprintf(stderr, "ERR: libbpf_num_possible_cpus failed\n");
 		return EXIT_FAIL;
 	}
 
+	// Allocate a buffer to hold the per-CPU values for the map lookup. The size of the buffer is the number of possible CPUs multiplied by the size of the value type (struct datarec).
 	values = calloc(n_cpus, sizeof(*values));
 	if (!values) {
 		fprintf(stderr, "ERR: failed to allocate per-CPU value buffer\n");
@@ -125,19 +145,10 @@ int main(int argc, char **argv)
 	printf("Running on %s (ifindex=%d). Press Ctrl-C to stop.\n", cfg.ifname, cfg.ifindex);
 
 	while (!exiting) {
-		unsigned long long packets = 0;
-		unsigned long long bytes = 0;
 
-		err = bpf_map_lookup_elem(map_fd, &key, values);
-		if (err) {
-			fprintf(stderr, "WARN: bpf_map_lookup_elem failed: %s\n", strerror(errno));
-		} else {
-			for (int i = 0; i < n_cpus; i++) {
-				packets += values[i].rx_packets;
-				bytes += values[i].rx_bytes;
-			}
-			printf("rx_packets=%llu rx_bytes=%llu\n", packets, bytes);
-		}
+		// TODO: implement the logic to read the values from the map and aggregate the total packets and bytes across all CPUs. Then print the results to the console every second.
+
+		// Hint: use bpf_map_lookup_elem() to read the values from the map, and remember that the map is a per-CPU array, so you will get an array of values (one for each CPU) that you need to aggregate. The total packets and bytes can be calculated by summing the rx_packets and rx_bytes fields across all CPU values. You can find details on how to access the map at https://docs.ebpf.io/linux/helper-function/bpf_map_lookup_elem/ 
 
 		sleep(1);
 	}

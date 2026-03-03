@@ -6,7 +6,8 @@
 
 /* This is the data record stored in the map */
 struct datarec {
- // TODO: Define the structure that will hold the packet and byte counters. You can use the same structure defined in `../common/xdp_stats_kern_user.h` to keep it consistent between the kernel and user-space programs. Yoou should use 
+ // TODO: Define the structure that will hold the packet and byte counters. 
+ int rx_packets;
 };
 
 #ifndef XDP_ACTION_MAX
@@ -28,7 +29,13 @@ SEC("xdp")
 int xdp_count(struct xdp_md *ctx)
 {
 	// Task 1: Store in the map the total number of packets and bytes received on the interface.
+	__u32 key = 0;
+	struct datarec *rec;
 
+	rec = bpf_map_lookup_elem(&xdp_stats_map, &key);
+	if (!rec)
+		return XDP_PASS;
+	rec->rx_packets += 1;
 	/*
 	* Hint: The structure `xdp_md` contains metadata about the packet being processed, including pointers to the start (ctx->data) and end (ctx->data_end) of the packet data. You can use these pointers to calculate the packet length, which is needed to update the byte counter. 
 	*/

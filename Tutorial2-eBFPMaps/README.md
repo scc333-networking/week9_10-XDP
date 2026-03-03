@@ -9,8 +9,7 @@ By the end you will have two artifacts: a kernel-side XDP program that updates c
 ## Learning outcomes
 After completing this activity, a student should be able to explain what an eBPF map is (a kernel-managed key/value store with a fixed type and capacity), justify why per-CPU maps are useful for high-rate counters, and implement the full “kernel updates + user-space readout” loop for packet and byte counters.
 
-## Prerequisites
-You need a Linux system with eBPF enabled, toolchain support for building BPF (`clang`/`llvm`, `make`), and sufficient privileges to attach XDP programs (typically root). If you have them available, `bpftool` and `ip link` are useful for inspecting programs and maps while debugging.
+> This tutorial uses both the mininet hosts and the terminal on your local devcontainer. When a command is expected to run on the devcontainer, we will prepend it with the prompt `$`. When a command is expected to run on the mininet host, we will prepend it with `mininet >`.
 
 ## eBPF maps: the kernel’s key/value store
 
@@ -46,6 +45,9 @@ The previous code snippet defines a map named `xdp_stats_map` that is a per-CPU 
 
 Inside eBPF programs, maps are accessed via helper functions such as `bpf_map_lookup_elem(&map, &key)` (returns a pointer to the value, or `NULL`) and `bpf_map_update_elem(&map, &key, &value, flags)` (insert/replace). From user space, maps are accessed via a file descriptor (FD) obtained after loading the object (or by opening a pinned map in bpffs).
 
+For the development of BPF code, we rely on the libbpf library, which provides a convenient API for defining maps and loading programs. You can find the source code under folder `lib/libbpf`. It is worth keeping the file `lib/libbpf/src/bpf_helper_defs.h` open, as it contains the definitions of map macros and helper functions that you will use in your code.
+
+
 ### Which map type should we use for counters?
 
 Counters are updated at packet rate and XDP runs concurrently across CPUs. If multiple CPUs update the same memory location without coordination, increments can be lost. One approach is to use a shared map (e.g., `BPF_MAP_TYPE_ARRAY`) and use atomic increments; another is to use a per-CPU map (e.g., `BPF_MAP_TYPE_PERCPU_ARRAY`) so each CPU updates its own private copy and user space sums per-CPU values. Do not forget that your computer is a distributed system, with multiple CPUs running in parallel, and XDP programs execute concurrently on each CPU. A bit like threads, the kernel memory is shared and the user must be very careful when updating state across multiple cores in parallel. 
@@ -55,12 +57,11 @@ If two CPUs update the same counter at the same time, you can lose updates unles
 In this lab you will use a `BPF_MAP_TYPE_PERCPU_ARRAY` with a single entry at key `0`, where the value is a struct containing `rx_packets` and `rx_bytes`.
 
 
-## Task 1 — Inspect the shared counter structure
+## Task 1 — Define the map in your XDP program
 
-> if you receive the following message: "No bpffs found at /sys/fs/bpf", this means that the bpf filesystem is not loaded. running the command `sudo mount -t bpf bpf /sys/fs/bpf` will fix your problem. 
-"
+> The BPF runtime is designed to ensure that code is efficient and secure. That mean that resources are allocated when they are actually used, while the OS will reject any problem that make unsafe operations. The provided code template can be compiled, but the loader will **fail to load** the program because the map definition is incomplete. It is normal that the default program will fail. 
 
-In the provided code template, we include the struct used to define the map entry. This consists of a PER-CPU array map with one entry, where the value is a struct called `datarec`. 
+In the provided code template, we include the struct used to define the map entry. This consists of a PER-CPU array map with one entry, where the value is a struct called `datarec`.
 ```C
 struct {
 	__uint(type, BPF_MAP_TYPE_PERCPU_ARRAY);
@@ -70,19 +71,20 @@ struct {
 } xdp_stats_map SEC(".maps");
 ```
 
-The `datarec` structure is currently empty. You should first define the structure of the data. The structure should use as the variable type one of the typedefs defined in `lib/install/include/xdp/xdp_sample.bpf.h` (e.g., `__u64`). 
+The `datarec` structure is currently empty. You should first define the structure of the data. This what kind of state you want to store in the map.  
 
-If you now build your program, you can use `bpftool` to inspect the loaded map and see its metadata (type, key/value sizes, etc.) and contents (initially zeroed). This will confirm that your map is defined correctly and is ready to be used by your XDP program.
-
-```sh
-mininet > h1 xdp-loader load -m skb h1-eth0 xdp_icmp_count_kern.o --prog-name xdp_icmp_count_func
-mininet > h1 bpftool map show
-mininet > h1 bpftool map dump id <map_id>
+```nash
+$ make
+$ make start
+mininet > h1 xdp-loader load -m skb h1-eth0 xdp_icmp_count_kern.o --prog-name xdp_count_func
+mininet > h1 xdp-loader status -d h1-eth0
 ```
 
-### Activity 3 — Update the map once per packet in your XDP program
 
-Every time the XDP program runs (once per packet), the kernel passes a context pointer (`ctx`) that contains metadata about the packet and the processing environment. The content of the context is defined by the kernel and can vary based on the hook point (e.g., XDP, kprobe, tracepoint). For XDP programs, the context typically includes pointers to the packet data (`ctx->data` and `ctx->data_end`), as well as metadata such as the ingress interface index (`ctx->ingress_ifindex`) and other fields. 
+
+### Activity 2 — Update the map once per packet in your XDP program
+
+In this second step, you will use your XDP program to update the map on every packet. Every time the XDP program runs (once per packet), the kernel passes a context pointer (`ctx`) that contains metadata about the packet and the processing environment. The content of the context is defined by the kernel and can vary based on the hook point (e.g., XDP, kprobe, tracepoint). For XDP programs, the context typically includes pointers to the packet data (`ctx->data` and `ctx->data_end`), as well as metadata such as the ingress interface index (`ctx->ingress_ifindex`) and other fields. 
 
 ```C
 /* user accessible metadata for XDP packet hook
@@ -101,42 +103,63 @@ struct xdp_md {
 ```
 
 
-You can use this context to access the packet data and compute its length in bytes. Then, you can look up the map entry at key `0` and increment the `rx_packets` and `rx_bytes` counters accordingly.
+You can use this context to access the packet data and compute its length in bytes. Then, you can look up the map entry at key `0` and increment the `rx_packets` and `rx_bytes` counters accordingly. Look at the documentation of the helper function `bpf_map_lookup_elem` to understand how to access the map from your XDP program. 
 
-Implement (or complete) an XDP handler that does the following on every packet: obtain `data`/`data_end`, compute packet length in bytes, look up the counter record at key `0`, and increment both counters. The minimal skeleton looks like this:
+> Note: As the state is a struct, if you access a pointer to the memory location, you can update the fields directly without needing to call `bpf_map_update_elem`.
 
-```c
-void *data_end = (void *)(long)ctx->data_end;
-void *data     = (void *)(long)ctx->data;
+Implement (or complete) an XDP handler that does the following on every packet: 
+  * get a pointer to the datarec instance from the map array using a key of `0`
+  * obtain `data`/`data_end` pointer for the packet
+  * compute packet length in bytes
+  * increment both counters
+
+
+If you now build your program, you can use `bpftool` to inspect the loaded map and see its metadata (type, key/value sizes, etc.) and contents (initially zeroed). This will confirm that your map is defined correctly and is ready to be used by your XDP program.
+
+```bash
+mininet > h1 bpftool map show
+mininet > h1 bpftool map dump id <map_id>
 ```
 
-Then compute the packet length:
+For example, the outputs for a sample run are the following:
 
-```c
-__u64 bytes = data_end - data;
+```bash
+mininet > h1 bpftool map show
+...
+23: perf_event_array  name events  flags 0x0
+        key 4B  value 4B  max_entries 8  memlock 328B
+181: percpu_array  name xdp_stats_map  flags 0x0
+        key 4B  value 4B  max_entries 1  memlock 336B
+        btf_id 316
+mininet> h1 bpftool map dump id 181
+[{
+        "key": 0,
+        "values": [{
+                "cpu": 0,
+                "value": {
+                    "rx_packets": 0,
+					"rx_bytes": 0
+                }
+            },{
+                "cpu": 1,
+                "value": {
+                    "rx_packets": 0, 
+					"rx_bytes": 0
+                }
+            },
+....
 ```
 
-Finally, look up the map entry and update counters:
 
-```c
-__u32 key = 0;
-struct datarec *rec = bpf_map_lookup_elem(&xdp_stats_map, &key);
-if (!rec)
-		return XDP_PASS;
+It is a good point to pause and think why you do not need atomics for `+=` when the map type is `BPF_MAP_TYPE_PERCPU_ARRAY`.
 
-rec->rx_packets += 1;
-rec->rx_bytes   += bytes;
+### Activity 3 — Read and aggregate per-CPU counters from user space
 
-return XDP_PASS;
-```
+Maps are an easy way to share data between the kernel and user space. For this final task, you will implement a loader/reader that (1) loads the BPF object, (2) attaches the XDP program to the selected interface, (3) finds the map FD for `xdp_stats_map`, and (4) once per second reads key `0` and prints totals.
 
-When you are done, add a short comment to your code explaining why you do not need atomics for `+=` when the map type is `BPF_MAP_TYPE_PERCPU_ARRAY`.
+We provide for you a simple user-space program template that performs steps (1)–(2) for you. You can find it in `xdp_count_user.c`. Your task is to complete step (3) and (4) by implementing a read-and-sum loop.
 
-### Activity 4 — Read and aggregate per-CPU counters from user space
-
-In user space, implement a loader/reader that (1) loads the BPF object, (2) attaches the XDP program to the selected interface, (3) finds the map FD for `xdp_stats_map`, and (4) once per second reads key `0` and prints totals.
-
-Because the map is per-CPU, a lookup returns one value per CPU. Your job is to allocate a buffer large enough to hold `n_cpus` copies of `struct datarec`, call `bpf_map_lookup_elem(map_fd, &key, values)`, and then sum `values[i].rx_packets` and `values[i].rx_bytes` across all CPUs.
+Because the map is per-CPU, a lookup returns one value per CPU. Your job is to allocate a buffer large enough to hold `n_cpus` copies of `struct datarec`, call `bpf_map_lookup_elem(map_fd, &key, values)`, and then sum struct `datarec` values across all CPUs to get the total packet and byte counts.
 
 The core read-and-sum loop looks like this:
 
@@ -160,12 +183,14 @@ while (running) {
 
 As a short written check (2–3 sentences), explain why user space has to do the summation step for per-CPU maps.
 
-### Activity 5 — Build, run, and observe the counters
+### Activity 5 — Test your implementation
 
-From this directory:
+Build the code and load the XDP program, start a mininet topology and load the loopback on host `h1` on interface `h1-eth0`:
 
 ```sh
-make
+$ make 
+$ make start 
+mininet > h1 xdp-loader load -m skb h1-eth0 xdp_icmp_count_kern.o --prog-name xdp_count_func
 ```
 
 Attach and start printing counters once per second (generic mode works on most setups, including loopback):
@@ -177,7 +202,7 @@ mininet> h1 ./xdp_count_user --dev h1-eth0 --skb-mode
 In another terminal, generate traffic:
 
 ```sh
-ping -c 5 127.0.0.1
+mininet > h1 ping -c 5 10.0.0.2
 ```
 
 You should see `rx_packets` and `rx_bytes` increase.
