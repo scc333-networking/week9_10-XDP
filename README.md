@@ -16,18 +16,22 @@ The material for this lab is based on the [XDP tutorial](https://github.com/xdp-
 Before starting the exercises, make sure you build the libraries for the labs using the following command:
 
 ```
-./configure 
+./configure
+make
 ```
+
+These commands will build the necessary libraries and tools for the exercises. If you encounter any issues during the setup, please let us know so we can assist you in getting everything up and running smoothly.
 
 ## What is eBPF?
 
 eBPF (extended Berkeley Packet Filter) is a powerful technology in the Linux kernel that allows you to run sandboxed programs in the kernel space. These programs can be used for a variety of purposes, including network monitoring, performance analysis, and security enforcement. eBPF programs are safe to run in the kernel because they are verified before execution, ensuring they do not crash the system or perform unsafe operations.
 
+
 Berkley Packet Filter (BPF) was originally designed for packet filtering in network applications. One of the initial application of BPF was in the `tcpdump` tool (an early command line version of Wireshark), which uses BPF to capture and filter network packets efficiently. eBPF extends the capabilities of BPF, allowing for more complex and versatile programs that can be attached to various kernel hooks, such as system calls, tracepoints, and network events. 
 
-eBPF programs can be written in several languages, including C and Python, and are compiled into bytecode that the kernel can execute. Nonetheless, developers have several restrictions when writing eBPF programs, such as limited loops and no direct access to kernel memory, to ensure safety and performance. Writting eBPF programs resembles your experience with P4 programming, as both involve writing code that runs in a constrained environment with specific APIs and limitations.
+eBPF programs can be written in several languages, including C and Python, and are compiled into bytecode that the kernel can execute. Nonetheless, developers have several restrictions when writing eBPF programs, such as limited loops and no direct access to kernel memory, to ensure safety and performance. Writting eBPF programs resembles your experience with P4 programming, as both involve writing code that runs in a constrained environment with specific APIs and limitations. Each language has a specific compiler that translates the code into eBPF bytecode, which is then loaded into the kernel and executed in response to specific events or conditions. For example, C code can be compiled to eBPF bytecode using the LLVM compiler with the clang front-end, while Python code can be compiled using libraries such as BCC (BPF Compiler Collection) or BPFd (BPF Daemon). The choice of language and compiler depends on the specific use case and the developer's preferences. The compiler output an object file containing eBPF bytecode. 
 
-eBPF has a wide range of applications, including: 
+eBPF bytecode is an architecture-independent ISA (register-based, 64-bit, R0–R10, etc.) that the kernel verifies and then either interprets or JIT-compiles into the host CPU’s native machine code (x86-64, arm64, etc.). This allows eBPF programs to run efficiently in the kernel, providing high performance for tasks such as packet processing and system monitoring. The Linux kernel offers hooks to attach eBPF programs to various stages of the network stack, allowing you to monitor and manipulate network traffic at different points in the processing pipeline. eBPF has a wide range of applications, including: 
 
 * Network performance monitoring: eBPF can be used to collect detailed metrics about network traffic, such as latency, throughput, and packet drops, without the overhead of traditional monitoring tools.
 * Security enforcement: eBPF can be used to implement security policies, such as blocking malicious traffic or detecting anomalies in network behavior.
@@ -39,9 +43,11 @@ If you want to learn more about eBPF applications, you can read the [eBPF commun
 
 ## What is XDP?
 
-You can imagine eBPF as an instruction set that allows you to write programs that can be executed in the kernel. The instruction set ensure security without sacrificing performance. In order to put an program written for a specific instruction set into action, you typically need a runtime environment. C programs require libc to be executed, while JAVA programs require the JVM. Similarly, XDP (eXpress Data Path) is a specific runtime for eBPF that focuses on high-performance packet processing. XDP allows you to attach eBPF programs directly to the network driver, enabling you to process packets at the earliest possible stage in the network stack. This allows for extremely low-latency packet processing, making it ideal for applications such as DDoS mitigation, load balancing, and high-frequency trading.
+XDP (eXpress Data Path) is a high-performance packet processing framework in the Linux kernel. It lets you run a small program very early in the receive (RX) path—typically right in the network driver—so you can decide what to do with each packet before the normal networking stack (IP routing, netfilter/iptables, sockets, etc.) gets involved. You can imagine this as a function that you can register with the OS and execute code for each packer recieved by the OS. XDP is a type of kernel hook that allows you to attach eBPF programs directly to the network driver, and the code should be compiled into eBPF bytecode. 
 
-In this set of lab tutorial, we will use XDP to attach eBPF programs to a network device and process packets. By processing packets at the XDP layer, we can achieve significant improvements in network performance compared to traditional packet processing methods. eBPF programs for example are used by Cillium, a popular open-source networking and security solution for Kubernetes, to implement high-performance network policies and load balancing.
+In this set of lab tutorial, we will use XDP to attach eBPF programs to a network device and process packets. We will try to perform a comparative analysis between P4 and eBPF and explore commonalities as well as differences. By the way, some high-end network cards (e.g. from Intel) support offloading XDP programs to the NIC hardware, which can further improve performance by allowing packet processing to be done directly on the network card, reducing latency and CPU overhead. Similar to P4 programs, certain NIC cards can execute XDP programs on the NIC hardware. 
+
+A key motivation for supporting XDP in the Linux kernel is to enable high-performance custom packet processing. The network stack in the Linux kernel is designed to be flexible and support a wide range of use cases, but this flexibility can come at the cost of performance. By allowing developers to write custom eBPF programs that can be executed directly in the network driver, XDP provides a way to achieve high performance for specific packet processing tasks, such as filtering, load balancing, or DDoS mitigation. eBPF programs for example are used by Cillium, a popular open-source networking and security solution for Kubernetes, to implement high-performance network policies and load balancing.
 
 ## Lab structure
 
