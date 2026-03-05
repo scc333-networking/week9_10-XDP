@@ -1,24 +1,15 @@
 # Tutotrial 1 - XDP Basics
 
-The programming language for XDP is eBPF (Extended Berkeley Packet Filter)
-which we will just refer to as BPF. Thus, this tutorial will also be
-relevant for learning how to write other BPF programs; however, the main
-focus is on BPF programs that can be used in the XDP-hook. In this and the
-following couple of activities we will be focusing on the basics to get up and
-running with BPF; the later lessons will then build on this to teach you how
-to do packet processing with XDP.
+The programming language for XDP is eBPF (Extended Berkeley Packet Filter) which we will just refer to as BPF. Thus, this tutorial will also be relevant for learning how to write other BPF programs; however, the main focus is on BPF programs that can be used in the XDP-hook. In this and the following couple of activities we will be focusing on the basics to get up and running with BPF; the later lessons will then build on this to teach you how to do packet processing with XDP.
 
-Since this is the first lesson, we will start out softly and
-include simple tasks. Instead, just read the text below and make sure
-you can load the program and that you understand what is going on.
+Since this is the first lesson, we will start out softly and include simple tasks. Instead, just read the text below and make sure you can load the program and that you understand what is going on.
 
 
-## Compiling example code
+## Compiling and running example code
 
-If you completed the setup dependencies guide, then you should be able to
-simply run the `make` command, in this directory. (The [Makefile](Makefile) and
-[configure](../configure) script will try to be nice and detect if you didn't complete the
-setup steps).
+If you completed the setup dependencies guide, then you should be able to simply run the `$ make` command, in this directory. (The [Makefile](Makefile) and [configure](../configure) script will try to be nice and detect if you didn't complete the setup steps).
+
+We will also use mininet as a way to run our XDP programs, so you can also start the mininet topology with the `make start` command. This will start a simple topology with two hosts and a switch, and you can then load your XDP programs to the interfaces of the hosts and see the effect of your program. This tutorial includes commands executed inside mininet, as well as commands executed in the host OS. The commands executed inside mininet are prefixed with `mininet>`, while the commands executed in the host OS are prefixed with `$`.
 
 ## Basic XDP code
 
@@ -44,7 +35,7 @@ tools like `readelf` or `llvm-objdump`. As the Makefile enables the debug
 option `-g` (LLVM version >= 4.0), the llvm-objdump tool can annotate
 assembler output with the original C code:
 
-Run: `llvm-objdump -S xdp_pass_kern.o`
+Run: `$ llvm-objdump -S xdp_pass_kern.o`
 ```asm
 xdp_pass_kern.o:        file format elf64-bpf
 
@@ -153,7 +144,7 @@ $ sudo mn --controller=none --switch=lxbr
 you can also use the following `make` command:
 
 ```bash
-# make start
+$ make start
 ```
 
 You can then load the `xdp_pass_kern.o` program to the `h1-eth0` interface of host h1 using the xdp-loader:
@@ -190,4 +181,4 @@ h1 perf script
 
 The `perf` command is a powerful tool for performance analysis and tracing in Linux. The `record` subcommand is used to record performance data, and the `-a` flag tells it to record system-wide (all CPUs). The `-e` flag specifies the event to record, in this case, the `xdp:xdp_exception` tracepoint. The `sleep 4` command is used to keep the recording running for 4 seconds, allowing you to generate some traffic by pinging from inside the namespace during that time. After recording, you can use the `perf script` command to display the recorded events in a human-readable format. This will show you the details of each XDP exception that occurred during the recording period, including the timestamp, CPU, and any additional information provided by the tracepoint.
 
-Congratulations! You have now successfully written and loaded your first XDP program, and you have also learned how to trace XDP exceptions using perf. This is just the beginning of what you can do with eBPF and XDP, and there are many more advanced features and use cases to explore. In the next exercises, we will dive deeper into the capabilities of eBPF and XDP, and we will learn how to store state in eBPF maps. 
+Congratulations! You have now successfully written and loaded your first XDP program, and you have also learned how to trace XDP exceptions using perf. This is just the beginning of what you can do with eBPF and XDP, and there are many more advanced features and use cases to explore. In the next exercises, we will dive deeper into the capabilities of eBPF and XDP, and we will learn how to store state in eBPF maps, how to parse packets, and how to implement more complex packet processing logic.

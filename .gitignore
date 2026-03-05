@@ -1,1 +1,7 @@
 output/week2.html
+common/common_user_bpf_xdp.o
+09-Function_Allocation_Criteria_and_Method_for_Determining_Levels_of_Automation_in_Small_Modular_Reactors.pdf
+common/common_params.o
+Tutorial1-XDPbasics/xdp_pass_kern.o
+Tutorial2-eBFPMaps/xdp_count_kern.o
+Tutorial2-eBFPMaps/xdp_count_user

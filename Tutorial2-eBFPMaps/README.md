@@ -213,3 +213,10 @@ If you want additional confirmation that things are attached correctly, you can 
 
 Once the basic counter works, extend the design by changing the map key. For example, you can count per-protocol (keyed by `__u8 proto`) or per-interface (keyed by `ctx->ingress_ifindex`). Keep the update path verifier-friendly and remember that per-CPU maps require user-space aggregation.
 
+
+## Debugging eBPF programs
+
+Debugging eBPF programs can be challenging due to the constraints of the eBPF environment and the fact that you cannot use traditional debugging tools. However, there are several techniques and tools you can use to troubleshoot and debug your eBPF programs:
+
+* Use `bpf_printk()`: This function allows you to print debug messages from your eBPF program. You can use it to log variable values, execution flow, and other relevant information. The messages can be viewed through the file `/sys/kernel/debug/tracing/trace_pipe` (i.e., `$s cat /sys/kernel/debug/tracing/trace_pipe`)
+* Use `bpftool`: This tool provides various commands to inspect and interact with eBPF programs and maps. You can use it to check if your program is loaded, view map contents, and monitor program execution. To load the program you can use alternatively the command `mininet > h1 bpftool prog load xdp_icmp_count_kern.o /sys/fs/bpf/xdp_count ` to load the program and received detailed information about the verification process. The output of the program can help you identify issues with your code and understand how the verifier is interpreting it.
