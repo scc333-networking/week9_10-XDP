@@ -12,4 +12,7 @@ COMMON_OBJS := $(COMMON_DIR)/common_user_bpf_xdp.o
 include $(COMMON_DIR)/common.mk
 
 start:
-	mn --controller none --switch lxbr -i 192.168.0.0/16 --arp --mac
+	sysctl -w net.bridge.bridge-nf-call-ip6tables=0
+	sysctl -w net.bridge.bridge-nf-call-iptables=0
+	sysctl -w net.bridge.bridge-nf-call-arptables=0
+	mn --controller none --switch lxbr --arp --mac
